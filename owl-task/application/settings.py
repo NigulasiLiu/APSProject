@@ -40,15 +40,17 @@ MongoDB 集合
 
 与接口相互关联，相互查询，请勿随意更改
 """
-# 用于存放任务调用日志
-SCHEDULER_TASK_RECORD = "scheduler_task_record"
 # 用于存放运行中的任务
 SCHEDULER_TASK_JOBS = "scheduler_task_jobs"
 # 用于存放任务信息
 SCHEDULER_TASK = "scheduler_task"
 
+# 用于存放任务调用日志
+SCHEDULER_TASK_RECORD = "scheduler_task_record"
 
 """
-定时任务脚本目录
+定时任务脚本目录,如果要调用task/test/main，
+那么前端调用目标格式为：test.main.Test("kinit",1314, True),括号内为类初始化参数
+参数/关键字参数，为调用函数需要的参数
 """
 TASKS_ROOT = "tasks"

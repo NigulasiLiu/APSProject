@@ -20,10 +20,12 @@ class Db_Config(object):
 app = Flask(__name__)
 app.config.from_object(Db_Config)
 
-CORS(app)  # 启用 CORS
+# 允许所有域名访问
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 db = SQLAlchemy(app)
 
 
+#做了一下差Agent表以验证该agent是否存在且在线
 class Agent(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     uuid = db.Column(db.String(255), unique=True, nullable=False)
@@ -41,53 +43,52 @@ class Agent(db.Model):
     processor_architecture = db.Column(db.String(255))
 
 
-@app.route('/api/send_task', methods=['POST'])
-def send_task():
-    uuid = request.args.get('uuid')
-    logging.debug(f'Received uuid: {uuid}')
+# @app.route('/api/send_task', methods=['POST'])
+# def send_task():
+#     uuid = request.args.get('uuid')
+#     logging.debug(f'Received uuid: {uuid}')
+#     # agent = Agent.query.filter_by(uuid=data['uuid']).first()
+#     agent = Agent.query.filter_by(uuid=uuid).first()
+#     if not agent or agent.status != 'Online':
+#         logging.error('Agent not online or does not exist')
+#         return jsonify({'error': 'Agent not online or does not exist'}), 404
+#
+#     # If the agent is online, send a task
+#     message = {
+#         'uuid': uuid,
+#         'action': 'print_time',
+#         'interval': 2  # Interval set to 2 seconds
+#     }
+#     try:
+#         producer = KafkaProducer(
+#             bootstrap_servers='localhost:9092',
+#             value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+#             client_id='test'
+#         )
+#         producer.send('client_tasks', message)
+#         producer.flush()
+#         logging.debug('Task sent to Kafka')
+#         return jsonify({'status': 'success', 'message': 'Task sent to client'}), 200
+#     except Exception as e:
+#         logging.error(f'Error sending task to Kafka: {str(e)}')
+#         return jsonify({'error': str(e)}), 500
+#     finally:
+#         if 'producer' in locals() and producer is not None:
+#             producer.close()  # Close the producer after use
+
+
+@app.route('/api/delete_task', methods=['DELETE'])
+def delete_task():
+    job_id = request.args.get('job_id')
+    uuid = job_id.split("_")[0]
+    task_name = job_id.split("_")[-1]
+    logging.debug(f'Received job_id: {job_id}')
+    print(f'Received job_id: {job_id}')
     # agent = Agent.query.filter_by(uuid=data['uuid']).first()
-    agent = Agent.query.filter_by(uuid=uuid).first()
-    if not agent or agent.status != 'Online':
-        logging.error('Agent not online or does not exist')
-        return jsonify({'error': 'Agent not online or does not exist'}), 404
-
-    # If the agent is online, send a task
     message = {
+        'job_id': job_id,
         'uuid': uuid,
-        'action': 'print_time',
-        'interval': 2  # Interval set to 2 seconds
-    }
-    try:
-        producer = KafkaProducer(
-            bootstrap_servers='localhost:9092',
-            value_serializer=lambda v: json.dumps(v).encode('utf-8'),
-            client_id='test'
-        )
-        producer.send('client_tasks', message)
-        producer.flush()
-        logging.debug('Task sent to Kafka')
-        return jsonify({'status': 'success', 'message': 'Task sent to client'}), 200
-    except Exception as e:
-        logging.error(f'Error sending task to Kafka: {str(e)}')
-        return jsonify({'error': str(e)}), 500
-    finally:
-        if 'producer' in locals() and producer is not None:
-            producer.close()  # Close the producer after use
-
-
-@app.route('/api/clear_task', methods=['DELETE'])
-def clear_task():
-    uuid = request.args.get('uuid')
-    logging.debug(f'Received uuid: {uuid}')
-    # agent = Agent.query.filter_by(uuid=data['uuid']).first()
-    agent = Agent.query.filter_by(uuid=uuid).first()
-    if not agent or agent.status != 'Online':
-        logging.error('Agent not online or does not exist')
-        return jsonify({'error': 'Agent not online or does not exist'}), 404
-    # If the agent is online, send a task
-    message = {
-        'uuid': uuid,
-        'action': 'clear_task'
+        'action': 'delete_task',
     }
     try:
         producer = KafkaProducer(
@@ -105,18 +106,6 @@ def clear_task():
         if 'producer' in locals() and producer is not None:
             producer.close()  # Close the producer after use
 
-
-def custom_partitioner(key_bytes, all_partitions, available_partitions):
-    # 添加日志或打印来检查key_bytes和计算的分区索引
-    print("Key:", key_bytes)
-    print("All partitions:", all_partitions)
-    print("Available partitions:", available_partitions)
-    # 这里是一些示例逻辑
-    partition_index = hash(key_bytes) % len(all_partitions)
-    print("Chosen partition:", partition_index)
-    return partition_index
-
-
 # 定义路由 '/api/test'，接收POST请求
 @app.route('/api/test', methods=['POST'])
 def test_task():
@@ -124,7 +113,7 @@ def test_task():
         # 从POST请求的JSON数据中获取各个字段的值
         data = request.get_json()
         uuid = data.get('uuid')
-        name = data.get('taskName')
+        job_name = data.get('job_name')
         task_description = data.get('taskDescription', '')
         job_class = data.get('callTarget')
         args = data.get('args'),
@@ -141,7 +130,7 @@ def test_task():
         # 如果需要将数据发送到Kafka，则可以在此处添加相应的逻辑
         message = {
             'uuid': uuid,
-            'name': name,
+            'job_name': job_name,
             'taskDescription': task_description,
             'job_class': job_class,
             'args': args,
@@ -174,31 +163,31 @@ def test_task():
             producer.close()
 
 
-@app.route('/api/test1', methods=['POST'])
-def test_task1():
-    try:
-        # 从POST请求的JSON数据中获取各个字段的值
-        data = request.get_json()
-        uuid = data.get('uuid')
-        task_name = data.get('taskName')
-        task_description = data.get('taskDescription', '')
-        call_target = data.get('callTarget')
-        execution_strategy = data.get('executionStrategy')
-        expression = data.get('expression', '')
-        start_time = data.get('startTime')
-        end_time = data.get('endTime')
-        execution_time = data.get('executionTime')
-        task_status = data.get('taskStatus')
-
-        logging.debug(f'Data content: {data}')  # 打印data的内容
-
-        # 在这里添加对字段的进一步处理逻辑，例如数据库操作或其他业务逻辑
-
-        return jsonify({'status': 'success', 'message': 'Task processed successfully'}), 200
-
-    except Exception as e:
-        logging.error(f'Error processing task: {str(e)}')
-        return jsonify({'error': str(e)}), 500
+# @app.route('/api/test1', methods=['POST'])
+# def test_task1():
+#     try:
+#         # 从POST请求的JSON数据中获取各个字段的值
+#         data = request.get_json()
+#         uuid = data.get('uuid')
+#         task_name = data.get('job_name')
+#         task_description = data.get('taskDescription', '')
+#         call_target = data.get('callTarget')
+#         execution_strategy = data.get('executionStrategy')
+#         expression = data.get('expression', '')
+#         start_time = data.get('startTime')
+#         end_time = data.get('endTime')
+#         execution_time = data.get('executionTime')
+#         task_status = data.get('taskStatus')
+#
+#         logging.debug(f'Data content: {data}')  # 打印data的内容
+#
+#         # 在这里添加对字段的进一步处理逻辑，例如数据库操作或其他业务逻辑
+#
+#         return jsonify({'status': 'success', 'message': 'Task processed successfully'}), 200
+#
+#     except Exception as e:
+#         logging.error(f'Error processing task: {str(e)}')
+#         return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':

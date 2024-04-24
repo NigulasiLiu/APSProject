@@ -1,11 +1,3 @@
-#!/usr/bin/python
-# -*- coding: utf-8 -*-
-# @version        : 1.0
-# @Create Time    : 2023/6/21 10:10 
-# @File           : scheduler.py
-# @IDE            : PyCharm
-# @desc           : 简要说明
-
 import datetime
 import importlib
 from typing import List
@@ -20,13 +12,13 @@ from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.job import Job
 from sqlalchemy import create_engine
 
-from .listener import before_job_execution
-from apscheduler.events import EVENT_JOB_EXECUTED
+from .listener import before_job_execution, on_job_removed, on_job_added
+from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_REMOVED, EVENT_JOB_ERROR
 from application.settings import MONGO_DB_NAME, MONGO_DB_URL, REDIS_DB_URL, SUBSCRIBE, SCHEDULER_TASK, \
     SCHEDULER_TASK_RECORD, \
     MYSQL_DB_NAME, MYSQL_DB_USER, MYSQL_DB_PASSWORD, MYSQL_DB_HOST, MYSQL_DB_PORT, MYSQL_DB_URL, \
     TASKS_ROOT, SCHEDULER_TASK_JOBS
-#from .mongo import get_database
+# from .mongo import get_database
 
 from .mysql import get_database
 
@@ -46,17 +38,15 @@ class Scheduler:
         self.scheduler = None
         self.db = None
 
-
     def __get_mysql_job_store(self) -> SQLAlchemyJobStore:
-        #self.engine = get_sqlalchemy_engine()
+        # self.engine = get_sqlalchemy_engine()
         """
         获取 MySQL Job Store 使用 SQLAlchemy
         :return: SQLAlchemy Job Store
         """
         self.db = get_database()
         engine = self.db.get_engine(MYSQL_DB_HOST, MYSQL_DB_USER, MYSQL_DB_PASSWORD, MYSQL_DB_NAME, MYSQL_DB_PORT)
-        return SQLAlchemyJobStore(engine=engine, tablename='scheduler_task_jobs')
-
+        return SQLAlchemyJobStore(engine=engine, tablename=SCHEDULER_TASK_JOBS)
 
     def start(self, listener: bool = True) -> None:
         """
@@ -68,22 +58,16 @@ class Scheduler:
         if listener:
             # 注册事件监听器
             self.scheduler.add_listener(before_job_execution, EVENT_JOB_EXECUTED)
+            self.scheduler.add_listener(on_job_removed, EVENT_JOB_REMOVED)
+            #self.scheduler.add_listener(on_job_added, EVENT_JOB_ADDED)
         self.scheduler.add_jobstore(self.__get_mysql_job_store())
         self.scheduler.start()
 
-    def __get_mongodb_job_store(self) -> MongoDBJobStore:
-        """
-        获取 MongoDB Job Store
-        :return: MongoDB Job Store
-        """
-        self.db = get_database()
-        return MongoDBJobStore(database=MONGO_DB_NAME, collection=self.COLLECTION, client=self.db.client)
-
-    def add_data_interval_cron_job(
+    def add_date_interval_cron(
             self,
             job_class: str,
             trigger: CronTrigger | DateTrigger | IntervalTrigger,
-            name: str = None,
+            job_id: str = None,
             *args,
             **kwargs
     ) -> None | Job:
@@ -91,12 +75,12 @@ class Scheduler:
         date触发器用于在指定的日期和时间触发一次任务。它适用于需要在特定时间点执行一次的任务，例如执行一次备份操作。
         :param job_class: 类路径
         :param trigger: 触发条件
-        :param name: 任务名称
+        :param job_id: 任务编号
         :return:
         """
         class_instance = self.__import_module(job_class)
         if class_instance:
-            return self.scheduler.add_job(class_instance.main, trigger=trigger, id=name,
+            return self.scheduler.add_job(class_instance.main, trigger=trigger, id=job_id,
                                           args=args, kwargs=kwargs, replace_existing=True)
         else:
             raise ValueError(f"添加任务失败，未找到该模块下的方法：{class_instance}")
@@ -108,7 +92,8 @@ class Scheduler:
             start_date: str = None,
             end_date: str = None,
             timezone: str = "Asia/Shanghai",
-            name: str = None,
+            job_id: str = None,
+            exec_strategy: str = "cron",
             args: tuple = (),
             **kwargs
     ) -> None | Job:
@@ -119,7 +104,7 @@ class Scheduler:
         :param start_date: 触发器的开始日期时间。可选参数，默认为 None。
         :param end_date: 触发器的结束日期时间。可选参数，默认为 None。
         :param timezone: 时区，表示触发器应用的时区。可选参数，默认为 None，使用上海默认时区。
-        :param name: 任务名称
+        :param job_id: 任务编号
         :param args: 非关键字参数
         :return:
         """
@@ -136,19 +121,20 @@ class Scheduler:
             end_date=end_date,
             timezone=timezone
         )
-        return self.add_data_interval_cron_job(job_class, trigger, name, *args, **kwargs)
+        return self.add_date_interval_cron(job_class, trigger, job_id, *args, **kwargs)
 
-    def add_date_job(self, job_class: str, expression: str, name: str = None, args: tuple = (), **kwargs) -> None | Job:
+    def add_date_job(self, job_class: str, expression: str, job_id: str = None,
+                     exec_strategy: str = "date", args: tuple = (), **kwargs) -> None | Job:
         """
         date触发器用于在指定的日期和时间触发一次任务。它适用于需要在特定时间点执行一次的任务，例如执行一次备份操作。
         :param job_class: 类路径
         :param expression: date
-        :param name: 任务名称
+        :param job_id: 任务编号
         :param args: 非关键字参数
         :return:
         """
         trigger = DateTrigger(run_date=expression)
-        return self.add_data_interval_cron_job(job_class, trigger, name, *args, **kwargs)
+        return self.add_date_interval_cron(job_class, trigger, job_id, *args, **kwargs)
 
     def add_interval_job(
             self,
@@ -157,8 +143,8 @@ class Scheduler:
             start_date: str | datetime.datetime = None,
             end_date: str | datetime.datetime = None,
             timezone: str = "Asia/Shanghai",
+            job_id: str = None,
             jitter: int = None,
-            name: str = None,
             args: tuple = (),
             **kwargs
     ) -> None | Job:
@@ -172,7 +158,7 @@ class Scheduler:
                            例如，设置 start_date='2023-06-22 10:00:00' 表示从 2023 年 6 月 22 日 10 点开始执行任务。
         :param timezone：表示时区，可以设置为字符串或 pytz.timezone 对象。例如，设置 timezone='Asia/Shanghai' 表示使用上海时区。
         :param jitter：表示时间抖动，可以设置为整数或浮点数。例如，设置 jitter=2 表示任务的执行时间会在原定时间上随机增加 0~2 秒的时间抖动。
-        :param name: 任务名称
+        :param job_id: 任务编号
         :param args: 非关键字参数
         :return:
         """
@@ -190,7 +176,7 @@ class Scheduler:
             timezone=timezone,
             jitter=jitter
         )
-        return self.add_data_interval_cron_job(job_class, trigger, name, *args, **kwargs)
+        return self.add_date_interval_cron(job_class, trigger, job_id, *args, **kwargs)
 
     def run_job(self, job_class: str, args: tuple = (), **kwargs) -> None:
         """
@@ -202,51 +188,50 @@ class Scheduler:
         job_class = self.__import_module(job_class)[0]
         job_class.main(*args, **kwargs)
 
-    def remove_job(self, name: str) -> None:
+    def remove_job_by_jobid(self, job_id: str) -> None:
         """
         删除任务
-        :param name: 任务名称
+        :param job_id: 任务编号
         :return:
         """
         try:
-            self.scheduler.remove_job(name)
+            self.scheduler.remove_job(job_id)
         except JobLookupError as e:
             raise ValueError(f"删除任务失败, 报错：{e}")
 
-    def get_job(self, name: str) -> Job:
+    def get_job_by_jobid(self, job_id: str) -> Job:
         """
         获取任务
-        :param name: 任务名称
+        :param job_id: 任务编号
         :return:
         """
-        return self.scheduler.get_job(name)
+        return self.scheduler.get_job(job_id)
 
-    def has_job(self, name: str) -> bool:
+    def has_job_by_jobid(self, job_id: str) -> bool:
         """
         判断任务是否存在
-        :param name: 任务名称
+        :param job_id: 任务编号
         :return:
         """
-        if self.get_job(name):
+        if self.get_job_by_jobid(job_id):
             return True
         else:
             return False
 
-    def get_jobs(self) -> List[Job]:
+    def get_jobs_by_jobid(self) -> List[Job]:
         """
         获取所有任务
         :return:
         """
         return self.scheduler.get_jobs()
 
-    def get_job_names(self) -> List[str]:
+    def get_job_job_ids(self) -> List[str]:
         """
         获取所有任务
         :return:
         """
         jobs = self.scheduler.get_jobs()
         return [job.id for job in jobs]
-
 
     @staticmethod
     def __parse_cron_expression(expression: str) -> tuple:
@@ -281,7 +266,6 @@ class Scheduler:
 
         parsed_fields = [int(field) if field != '*' else 0 for field in fields]
         return tuple(parsed_fields)
-
 
     def __import_module(self, expression: str):
         """
@@ -410,6 +394,14 @@ class Scheduler:
     #
     #         print(f"参数解析结果: {arguments}")  # 打印每步解析后的参数
     #     return arguments
+
+    def __get_mongodb_job_store(self) -> MongoDBJobStore:
+        """
+        获取 MongoDB Job Store
+        :return: MongoDB Job Store
+        """
+        self.db = get_database()
+        return MongoDBJobStore(database=MONGO_DB_NAME, collection=self.COLLECTION, client=self.db.client)
 
     def shutdown(self) -> None:
         """
