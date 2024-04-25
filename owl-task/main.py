@@ -8,12 +8,11 @@ import pytz
 from kafka import KafkaConsumer
 
 from core.scheduler import Scheduler
-from application.settings import MONGO_DB_NAME, MONGO_DB_URL, REDIS_DB_URL, SUBSCRIBE, SCHEDULER_TASK, \
-    SCHEDULER_TASK_RECORD, \
-    MYSQL_DB_NAME, MYSQL_DB_USER, MYSQL_DB_PASSWORD, MYSQL_DB_HOST, MYSQL_DB_PORT, KAFKA_TOPIC, KAFKA_BROKER_URL, \
-    TASKS_ROOT
+from appconfig.settings import SCHEDULER_TASK, KAFKA_TOPIC, KAFKA_BROKER_URL, TASKS_ROOT
+# from appconfig.config import MYSQL_DB_NAME, MYSQL_DB_USER, MYSQL_DB_PASSWORD, MYSQL_DB_HOST, MYSQL_DB_PORT
 from core.logger import logger
 from core.mysql import get_database as get_mysql
+from models import TaskDetail
 
 
 class ScheduledTask:
@@ -32,165 +31,180 @@ class ScheduledTask:
         self.rd = None
         self.uuid = uuid
 
-    # def parse_message(self, message):
-    #     """
-    #     处理接收到的消息并根据消息内容添加定时任务
-    #     :param message: 接收到的消息字典
-    #     """
-    #
-    #     if message.get('uuid') == self.uuid:
-    #         try:
-    #             print("收到消息:"+message.get('uuid'))
-    #             print("job_class:"+message.get("job_class"))
-    #             print("name:"+message.get("name"))
-    #             print("args:"+message.get("args"))
-    #             print("strategyrgs:"+message.get("exec_strategy"))
-    #             exec_strategy = message.get("exec_strategy")
-    #             job_params = {
-    #                 "job_class": message.get("job_class"),
-    #                 "name": message.get("name"),
-    #                 "args": message.get("args", ()),
-    #                 "kwargs": message.get("kwargs", {})
-    #             }
-    #
-    #             # 为不同的任务类型构建触发器并添加任务
-    #             if exec_strategy == self.JobExecStrategy.cron.value:
-    #                 job_params["expression"] = message.get("expression")
-    #                 job_params["start_date"] = message.get("start_date")
-    #                 job_params["end_date"] = message.get("end_date")
-    #                 job_params["timezone"] = message.get("timezone")
-    #                 self.scheduler.add_cron_job(**job_params)
-    #             elif exec_strategy == self.JobExecStrategy.date.value:
-    #                 job_params["expression"] = message.get("expression")
-    #                 self.scheduler.add_date_job(**job_params)
-    #             elif exec_strategy == self.JobExecStrategy.interval.value:
-    #                 job_params["expression"] = message.get("expression")
-    #                 job_params["start_date"] = message.get("start_date")
-    #                 job_params["end_date"] = message.get("end_date")
-    #                 job_params["timezone"] = message.get("timezone")
-    #                 job_params["jitter"] = message.get("jitter", None)
-    #                 self.scheduler.add_interval_job(**job_params)
-    #             else:
-    #                 raise ValueError("Unsupported execution strategy")
-    #
-    #         except Exception as e:
-    #             logger.error(f"Failed to process message: {str(e)}")
-    #             # 可以选择发送错误反馈到日志或其他错误处理机制
-    #
-    #         # 根据 operation 调用相应的任务处理函数
-    #         # 例如: getattr(self, operation)(**task)
-
     def parse_message(self, message):
         """
         处理接收到的消息并根据消息内容添加定时任务
         :param message: 接收到的消息字典
         """
-        shanghai_tz = pytz.timezone("Asia/Shanghai")
-        try:
-            exec_strategy = message.get("exec_strategy")
-            job_params = {
-                "job_id": message.get("uuid")+"_"+message.get("job_name"),
-                "job_class": message.get("job_class"),
-                "args": message.get("args"),
-                "kwargs": message.get("kwargs"),
-            }
+        if message.get("action") == "delete_task":
+            self.delete_job(message.get("job_id"))
+        elif message.get("action") == "pause_task":
+            self.pend_job(message.get("job_id"))
+        elif message.get("action") == "resume_task":
+            self.restart_job(message.get("job_id"))
+        else:
+            shanghai_tz = pytz.timezone("Asia/Shanghai")
+            try:
+                # print("job_id: {}".format(job_params["job_id"]))
+                # print("收到消息: UUID={}".format(message.get('uuid')))
+                # print("job_class: {}".format(message.get("job_class")))
+                # print("args: {}".format(job_params["args"]))
+                # print("kwargs: {}".format(job_params["kwargs"]))
+                # print("strategy: {}".format(message.get("exec_strategy")))
+                # print("expression: {}".format(message.get("expression")))
+                # print("start_date: {}".format(message.get("start_date")))
+                # print("end_date: {}".format(message.get("end_date")))
+                # print("timezone: {}".format(message.get("timezone")))
+                # result = {
+                #     "job_id": message.get("uuid")+"_"+message.get("job_name"),
+                #     "job_class": message.get("job_class"),
+                #     "exec_strategy": message.get("exec_strategy"),
+                #     "create_time": datetime.datetime.now(shanghai_tz),
+                #     "start_time": message.get("start_date") or "-",
+                #     "end_time": message.get("end_date") or "-",
+                #     "exception": "调度中",
+                #     "retval": "调度中",
+                #     "start_timestamp": datetime.datetime.now(pytz.timezone("Asia/Shanghai")),
+                #     "update_timestamp": datetime.datetime.now(pytz.timezone("Asia/Shanghai")),
+                #     "process_time": 0,
+                #     "status": "starting",
+                # }
+                exec_strategy = message.get("exec_strategy")
+                job_params = {
+                    "job_id": message.get("job_id"),
+                    "job_class": message.get("job_class"),
+                    "args": message.get("args"),
+                    "kwargs": message.get("kwargs"),
+                }
+                task_detail = TaskDetail(
+                    job_id=message.get("job_id"),
+                    job_class=message.get("job_class"),
+                    exec_strategy=message.get("exec_strategy"),
+                    excute_times=message.get("excute_times"),
+                    create_time=datetime.datetime.now(shanghai_tz),
+                    start_time=message.get("start_date"),
+                    end_time=message.get("end_date"),
+                    exception="调度中",
+                    retval="调度中",
+                    start_timestamp=datetime.datetime.now(shanghai_tz),
+                    update_timestamp=datetime.datetime.now(shanghai_tz),
+                    process_time=0,
+                    status="starting"
+                )
+                print("尝试添加任务详情条目")
+                # self.mysql.create_data(task_detail)
+                self.create_job(task_detail)
+                print("尝试添加任务详情")
+                # 为不同的任务类型构建触发器并添加任务
+                if exec_strategy == self.JobExecStrategy.cron.value:
+                    job_params["expression"] = message.get("expression")
+                    job_params["start_date"] = message.get("start_date")
+                    job_params["end_date"] = message.get("end_date")
+                    job_params["timezone"] = message.get("timezone")
+                    self.scheduler.add_cron_job(**job_params)
+                    print("添加Cron任务成功")
+                elif exec_strategy == self.JobExecStrategy.interval.value:
+                    job_params["expression"] = message.get("expression")
+                    job_params["start_date"] = message.get("start_date")
+                    job_params["end_date"] = message.get("end_date")
+                    job_params["timezone"] = message.get("timezone")
+                    job_params["jitter"] = message.get("jitter", None)
+                    print("开始添加Interval任务")
+                    self.scheduler.add_interval_job(**job_params)
+                    print("添加Interval任务成功")
+                elif exec_strategy == self.JobExecStrategy.date.value:
+                    job_params["expression"] = message.get("expression")
+                    self.scheduler.add_date_job(**job_params)
+                    print("添加Date任务成功")
+                elif exec_strategy == self.JobExecStrategy.once.value:
+                    # 这种方式会自动执行事件监听器，用于保存执行任务完成后的日志
+                    job_params["job_id"] = f"-{random.randint(1000, 9999)}" + job_params["job_id"]
+                    self.scheduler.add_date_job(**job_params, expression=datetime.datetime.now())
+                else:
+                    raise ValueError("Unsupported execution strategy: {}".format(exec_strategy))
 
-            print("job_id: {}".format(job_params["job_id"]))
-            print("收到消息: UUID={}".format(message.get('uuid')))
-            print("job_class: {}".format(message.get("job_class")))
-            print("args: {}".format(job_params["args"]))
-            print("kwargs: {}".format(job_params["kwargs"]))
-            print("strategy: {}".format(message.get("exec_strategy")))
-            print("expression: {}".format(message.get("expression")))
-            print("start_date: {}".format(message.get("start_date")))
-            print("end_date: {}".format(message.get("end_date")))
-            print("timezone: {}".format(message.get("timezone")))
+            except Exception as e:
+                logger.error(f"Failed to process message: {str(e)}")
+                print(f"处理消息失败: {str(e)}")
 
-            result = {
-                "job_id": message.get("uuid")+"_"+message.get("job_name"),
-                "job_class": message.get("job_class"),
-                "exec_strategy": message.get("exec_strategy"),
-                "create_time": datetime.datetime.now(shanghai_tz),
-                "start_time": message.get("start_date") or "-",
-                "end_time": message.get("end_date") or "-",
-                "exception": "调度中",
-                "retval": "调度中",
-                "start_timestamp": datetime.datetime.now(pytz.timezone("Asia/Shanghai")),
-                "update_timestamp": datetime.datetime.now(pytz.timezone("Asia/Shanghai")),
-                "process_time": 0,
-                "status": "starting",
-            }
-            print("尝试添加任务详情条目")
-            self.store_job_info(result)
-            print("尝试添加任务详情")
-            # 为不同的任务类型构建触发器并添加任务
-            if exec_strategy == self.JobExecStrategy.cron.value:
-                job_params["expression"] = message.get("expression")
-                job_params["start_date"] = message.get("start_date")
-                job_params["end_date"] = message.get("end_date")
-                job_params["timezone"] = message.get("timezone")
-                self.scheduler.add_cron_job(**job_params)
-                print("添加Cron任务成功")
-
-            elif exec_strategy == self.JobExecStrategy.interval.value:
-                job_params["expression"] = message.get("expression")
-                job_params["start_date"] = message.get("start_date")
-                job_params["end_date"] = message.get("end_date")
-                job_params["timezone"] = message.get("timezone")
-                job_params["jitter"] = message.get("jitter", None)
-                print("开始添加Interval任务")
-                self.scheduler.add_interval_job(**job_params)
-                print("添加Interval任务成功")
-
-            elif exec_strategy == self.JobExecStrategy.date.value:
-                job_params["expression"] = message.get("expression")
-                self.scheduler.add_date_job(**job_params)
-                print("添加Date任务成功")
-            elif exec_strategy == self.JobExecStrategy.once.value:
-                # 这种方式会自动执行事件监听器，用于保存执行任务完成后的日志
-                job_params["job_id"] = f"-{random.randint(1000, 9999)}"+job_params["job_id"]
-                self.scheduler.add_date_job(**job_params, expression=datetime.datetime.now())
-            else:
-                raise ValueError("Unsupported execution strategy: {}".format(exec_strategy))
-
-        except Exception as e:
-            logger.error(f"Failed to process message: {str(e)}")
-            print(f"处理消息失败: {str(e)}")
-
-        # 根据 operation 调用相应的任务处理函数
-        # 例如: getattr(self, operation)(**task)
-
-    def store_job_info(self, update_data: dict) -> None:
+    def create_job(self, model_instance) -> None:
         # 添加任务详情条目
         try:
-            task = self.mysql.get_data(SCHEDULER_TASK, job_id=update_data["job_id"])
+            job_id = model_instance.job_id
+            task = self.mysql.get_data(TaskDetail, job_id=job_id)
             if task:
-                print(update_data["job_id"]+":存在同名任务，覆盖该任务")
-                self.mysql.put_data(SCHEDULER_TASK, {'job_id': update_data["job_id"]}, update_data)
-                print(update_data["job_id"]+":任务更新成功")
+                self.mysql.put_data(TaskDetail, {"job_id": job_id}, model_instance)
             else:
-                print(update_data["job_id"]+":添加新任务")
-                #logger.info("任务 " + update_data["job_id"] + "不在 SCHEDULER_TASK 表中，将创建新记录")
-                self.mysql.create_data(SCHEDULER_TASK, update_data)
+                print(f":添加新任务{job_id}")
+                # logger.info("任务 " + update_data["job_id"] + "不在 SCHEDULER_TASK 表中，将创建新记录")
+                self.mysql.create_data(model_instance)
         except Exception as e:
-            logger.error("处理任务编号 " + update_data["job_id"] + " 时发生错误: {e}")
-            update_data["exception"] = str(e)
-            self.mysql.create_data(SCHEDULER_TASK, update_data)
+            logger.error("处理任务编号 " + model_instance.job_id + " 时发生错误: {e}")
+            model_instance.exception = str(e)
+            self.mysql.create_data(model_instance)
 
     def delete_job(self, job_id: str) -> None:
-
         # 检查任务是否存在
-        if not self.scheduler.has_job_by_jobid(job_id):
-            print(f"任务 {job_id} 不存在，无需删除")
-            return
-
+        # if not self.scheduler.has_job_by_jobid(job_id):
+        #     print(f"任务 {job_id} 不存在于scheduler，正在检查数据库中的记录...")
+        #     task = self.mysql.get_data(TaskDetail, job_id=job_id)
+        #     if task and task.status == "closing":
+        #         print(f"正在删除 {job_id}，因为其状态为 'closing'...")
+        #         self.mysql.delete_data(TaskDetail, job_id=job_id)
+        #     else:
+        #         if task:
+        #             print(f"任务 {job_id} 的状态不是 'closing'，无法删除。当前状态：{task.status}")
+        #         else:
+        #             print(f"在数据库中未找到任务 {job_id} 的记录。")
         try:
-            # 尝试删除任务
-            self.scheduler.remove_job_by_jobid(job_id)
-            print(f"成功删除job_id为 {job_id} 的任务")
+            task = self.mysql.get_data(TaskDetail, job_id=job_id)
+            if task:
+                self.mysql.delete_data(TaskDetail, job_id=job_id)
+                print(f"成功删除job_id为 {job_id} 的任务")
+                self.scheduler.remove_job_by_jobid(job_id)
+                # if task.status == "closing":
+                #     self.mysql.delete_data(TaskDetail, job_id=job_id)
+                #     print(f"成功删除job_id为 {job_id} 的任务")
+                #     self.scheduler.remove_job_by_jobid(job_id)
+            else:
+                print(f"不存在job_id为 {job_id} 的任务,不需要删除")
         except Exception as e:
             print(f"删除任务 {job_id} 时发生错误: {e}")
             logger.error(f"删除任务 {job_id} 时发生错误: {e}")
+
+    def pend_job(self, job_id: str) -> None:
+        try:
+            self.scheduler.pause_job_by_jobid(job_id)
+            task = self.mysql.get_data(TaskDetail, job_id=job_id)
+            # if task:
+            #     if task.status == "running":
+            #         # self.mysql.update_data(TaskDetail, {"job_id": "job_id"}, {"status": "pending"})
+            #         # print(f"成功暂停job_id为 {job_id} 的任务")
+            #         self.scheduler.pause_job_by_jobid(job_id)
+            #     else:
+            #         print(f"job_id为 {job_id} 的任务状态并不是running")
+            # else:
+            #     print(f"不存在job_id为 {job_id} 的任务，无需暂停")
+        except Exception as e:
+            print(f"暂停任务 {job_id} 时发生错误: {e}")
+            logger.error(f"暂停任务 {job_id} 时发生错误: {e}")
+
+    def restart_job(self, job_id: str) -> None:
+        try:
+            self.scheduler.resume_job_by_jobid(job_id)
+            # task = self.mysql.get_data(TaskDetail, job_id=job_id)
+            # if task:
+            #     if task.status == "pending":
+            #         # self.mysql.update_data(TaskDetail, {"job_id": "job_id"}, {"status": "running"})
+            #         # print(f"成功恢复job_id为 {job_id} 的任务")
+            #         self.scheduler.resume_job_by_jobid(job_id)
+            #     else:
+            #         print(f"job_id为 {job_id} 的任务状态并不是pending")
+            # else:
+            #     print(f"未恢复job_id为 {job_id} 的任务")
+        except Exception as e:
+            print(f"恢复任务 {job_id} 时发生错误: {e}")
+            logger.error(f"恢复任务 {job_id} 时发生错误: {e}")
 
     def run(self) -> None:
         """
@@ -199,6 +213,28 @@ class ScheduledTask:
         """
         self.start_mysql()
         self.start_scheduler()
+        self.start_kafka()
+
+    def start_mysql(self) -> None:
+        """
+        启动 mysql
+        :return:
+        """
+        self.mysql = get_mysql()
+        if self.mysql:
+            print("Scheduler 启动成功")
+        # self.mysql.connect_to_database()#MYSQL_DB_HOST, MYSQL_DB_USER, MYSQL_DB_PASSWORD, MYSQL_DB_NAME, MYSQL_DB_PORT
+
+    def start_scheduler(self) -> None:
+        """
+        启动定时任务
+        :return:
+        """
+        self.scheduler = Scheduler()
+        self.scheduler.start()
+        print("Scheduler 启动成功")
+
+    def start_kafka(self) -> None:
         """
         启动 Kafka 消费者，监听并处理消息
         """
@@ -216,67 +252,11 @@ class ScheduledTask:
         try:
             for message in consumer:
                 data = message.value
-                if data.get("action") == "delete_task":
-                    self.delete_job(data.get("job_id"))
-                else:
-                    self.parse_message(data)
-                    # if data.get('uuid') == self.uuid:
-                    #     if data.get("action") == "delete_task":
-                    #         self.delete_job(data.get("job_id"))
-                    #     else:
-                    #         self.parse_message(data)
+                self.parse_message(data)
         except KeyboardInterrupt:
             print("程序终止")
         finally:
             consumer.close()
-    # def add_job(self, exec_strategy: str, job_params: dict) -> None:
-    #     """
-    #     添加定时任务
-    #     :param exec_strategy: 执行策略
-    #     :param job_params: 执行参数
-    #     :return:
-    #     """
-    #     name = job_params.get("name", None)
-    #     error_info = None
-    #     try:
-    #         if exec_strategy == self.JobExecStrategy.interval.value:
-    #             self.scheduler.add_interval_job(**job_params)
-    #         elif exec_strategy == self.JobExecStrategy.cron.value:
-    #             self.scheduler.add_cron_job(**job_params)
-    #         elif exec_strategy == self.JobExecStrategy.date.value:
-    #             self.scheduler.add_date_job(**job_params)
-    #         elif exec_strategy == self.JobExecStrategy.once.value:
-    #             # 这种方式会自动执行事件监听器，用于保存执行任务完成后的日志
-    #             job_params["name"] = f"{name}-temp-{random.randint(1000, 9999)}"
-    #             self.scheduler.add_date_job(**job_params, expression=datetime.datetime.now())
-    #         else:
-    #             raise ValueError("无效的触发器")
-    #     except ConflictingIdError as e:
-    #         # 任务编号已存在，重复添加报错
-    #         error_info = "任务编号已存在"
-    #     except ValueError as e:
-    #         error_info = e.__str__()
-    #
-    #     if error_info:
-    #         logger.error(f"任务编号：{name}，报错：{error_info}")
-    #         self.error_record(name, error_info)
-
-    def start_mysql(self) -> None:
-        """
-        启动 mysql
-        :return:
-        """
-        self.mysql = get_mysql()
-        self.mysql.connect_to_database()#MYSQL_DB_HOST, MYSQL_DB_USER, MYSQL_DB_PASSWORD, MYSQL_DB_NAME, MYSQL_DB_PORT
-
-    def start_scheduler(self) -> None:
-        """
-        启动定时任务
-        :return:
-        """
-        self.scheduler = Scheduler()
-        self.scheduler.start()
-        print("Scheduler 启动成功")
 
     def close(self) -> None:
         """
@@ -285,11 +265,12 @@ class ScheduledTask:
         关闭程序
         :return:
         """
-        self.mysql.close_database_connection()
-        if self.scheduler:
-            self.scheduler.shutdown()
-        if self.rd:
-            self.rd.close_database_connection()
+        self.mysql.close_all_sessions()
+        # self.mysql.close_database_connection()
+        # if self.scheduler:
+        #     self.scheduler.shutdown()
+        # if self.rd:
+        #     self.rd.close_database_connection()
 
     # def start_mongo(self) -> None:
     #     """

@@ -9,7 +9,7 @@
 import os
 import time
 from loguru import logger
-from application.settings import BASE_DIR
+from appconfig.settings import BASE_DIR
 
 """
 # 日志简单配置

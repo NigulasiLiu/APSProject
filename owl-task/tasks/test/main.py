@@ -25,4 +25,4 @@ class Test:
             print('Test初始化参数为: {}，{}，{}'.format(self.name, self.age, self.bo))
             print('main参数为: {}'.format(mainpar))
             time.sleep(3)
-            return '任务执行完成'
+            return "任务执行完成"

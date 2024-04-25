@@ -43,39 +43,6 @@ class Agent(db.Model):
     processor_architecture = db.Column(db.String(255))
 
 
-# @app.route('/api/send_task', methods=['POST'])
-# def send_task():
-#     uuid = request.args.get('uuid')
-#     logging.debug(f'Received uuid: {uuid}')
-#     # agent = Agent.query.filter_by(uuid=data['uuid']).first()
-#     agent = Agent.query.filter_by(uuid=uuid).first()
-#     if not agent or agent.status != 'Online':
-#         logging.error('Agent not online or does not exist')
-#         return jsonify({'error': 'Agent not online or does not exist'}), 404
-#
-#     # If the agent is online, send a task
-#     message = {
-#         'uuid': uuid,
-#         'action': 'print_time',
-#         'interval': 2  # Interval set to 2 seconds
-#     }
-#     try:
-#         producer = KafkaProducer(
-#             bootstrap_servers='localhost:9092',
-#             value_serializer=lambda v: json.dumps(v).encode('utf-8'),
-#             client_id='test'
-#         )
-#         producer.send('client_tasks', message)
-#         producer.flush()
-#         logging.debug('Task sent to Kafka')
-#         return jsonify({'status': 'success', 'message': 'Task sent to client'}), 200
-#     except Exception as e:
-#         logging.error(f'Error sending task to Kafka: {str(e)}')
-#         return jsonify({'error': str(e)}), 500
-#     finally:
-#         if 'producer' in locals() and producer is not None:
-#             producer.close()  # Close the producer after use
-
 
 @app.route('/api/delete_task', methods=['DELETE'])
 def delete_task():
@@ -161,33 +128,6 @@ def test_task():
         # 无论如何，都要关闭producer
         if 'producer' in locals() and producer is not None:
             producer.close()
-
-
-# @app.route('/api/test1', methods=['POST'])
-# def test_task1():
-#     try:
-#         # 从POST请求的JSON数据中获取各个字段的值
-#         data = request.get_json()
-#         uuid = data.get('uuid')
-#         task_name = data.get('job_name')
-#         task_description = data.get('taskDescription', '')
-#         call_target = data.get('callTarget')
-#         execution_strategy = data.get('executionStrategy')
-#         expression = data.get('expression', '')
-#         start_time = data.get('startTime')
-#         end_time = data.get('endTime')
-#         execution_time = data.get('executionTime')
-#         task_status = data.get('taskStatus')
-#
-#         logging.debug(f'Data content: {data}')  # 打印data的内容
-#
-#         # 在这里添加对字段的进一步处理逻辑，例如数据库操作或其他业务逻辑
-#
-#         return jsonify({'status': 'success', 'message': 'Task processed successfully'}), 200
-#
-#     except Exception as e:
-#         logging.error(f'Error processing task: {str(e)}')
-#         return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':

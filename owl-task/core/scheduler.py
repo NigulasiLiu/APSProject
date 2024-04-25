@@ -1,33 +1,25 @@
 import datetime
 import importlib
+import json
 from typing import List
 import re
+
+import pytz
 from apscheduler.jobstores.base import JobLookupError
-from apscheduler.jobstores.mongodb import MongoDBJobStore
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.job import Job
-from sqlalchemy import create_engine
+from loguru import logger
 
-from .listener import before_job_execution, on_job_removed, on_job_added
-from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_REMOVED, EVENT_JOB_ERROR
-from application.settings import MONGO_DB_NAME, MONGO_DB_URL, REDIS_DB_URL, SUBSCRIBE, SCHEDULER_TASK, \
-    SCHEDULER_TASK_RECORD, \
-    MYSQL_DB_NAME, MYSQL_DB_USER, MYSQL_DB_PASSWORD, MYSQL_DB_HOST, MYSQL_DB_PORT, MYSQL_DB_URL, \
-    TASKS_ROOT, SCHEDULER_TASK_JOBS
-# from .mongo import get_database
+from models import TaskDetail
+from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_REMOVED, EVENT_JOB_ERROR, EVENT_JOB_ADDED, \
+    JobExecutionEvent, EVENT_JOB_MODIFIED
+from appconfig.settings import SCHEDULER_TASK, SCHEDULER_TASK_JOBS, TASKS_ROOT
 
 from .mysql import get_database
-
-
-def get_sqlalchemy_engine():
-    # 根据实际使用的 MySQL 驱动来调整 URL 格式
-    url = f'mysql+pymysql://{MYSQL_DB_USER}:{MYSQL_DB_PASSWORD}@{MYSQL_DB_HOST}:{MYSQL_DB_PORT}/{MYSQL_DB_NAME}'
-    engine = create_engine(url)
-    return engine
 
 
 class Scheduler:
@@ -45,7 +37,7 @@ class Scheduler:
         :return: SQLAlchemy Job Store
         """
         self.db = get_database()
-        engine = self.db.get_engine(MYSQL_DB_HOST, MYSQL_DB_USER, MYSQL_DB_PASSWORD, MYSQL_DB_NAME, MYSQL_DB_PORT)
+        engine = self.db.get_engine()
         return SQLAlchemyJobStore(engine=engine, tablename=SCHEDULER_TASK_JOBS)
 
     def start(self, listener: bool = True) -> None:
@@ -57,11 +49,135 @@ class Scheduler:
         self.scheduler = BackgroundScheduler()
         if listener:
             # 注册事件监听器
-            self.scheduler.add_listener(before_job_execution, EVENT_JOB_EXECUTED)
-            self.scheduler.add_listener(on_job_removed, EVENT_JOB_REMOVED)
-            #self.scheduler.add_listener(on_job_added, EVENT_JOB_ADDED)
+            self.scheduler.add_listener(self.before_job_execution, EVENT_JOB_EXECUTED)
+            self.scheduler.add_listener(self.on_job_modified,EVENT_JOB_MODIFIED)
+            self.scheduler.add_listener(self.on_job_removed, EVENT_JOB_ADDED)
         self.scheduler.add_jobstore(self.__get_mysql_job_store())
         self.scheduler.start()
+
+    """
+    监听器配置
+    :return:
+    """
+
+    def on_job_modified(self, event: EVENT_JOB_MODIFIED):
+        try:
+            job_id = event.job_id
+            if "-temp-" in job_id:
+                job_id = job_id.split("-")[0]
+
+            print(f"modifing job: {event.job_id}")
+            task = self.db.get_data(TaskDetail, job_id=job_id)
+            # task_exist = self.has_job_by_jobid(job_id)
+            if task:
+                if task.status == "running":
+                    print(f"即将暂停Task {job_id} ")
+                    self.db.update_data(TaskDetail, {"job_id": job_id}, {"status": "pending"})
+                elif task.status == "pending":
+                    print(f"即将恢复Task {job_id} ")
+                    self.db.update_data(TaskDetail, {"job_id": job_id}, {"status": "running"})
+                else:
+                    print(f"Task {job_id} 正在被暂停,恢复以外的操作修改)")
+            else:
+                # 如果数据库中没有找到任务，则插入新条目
+                # task_detail = TaskDetail(
+                #     job_id=job_id,
+                #     status="created"
+                # )
+                # db.create_data(task_detail)
+                print("仍未从SCHEDULER_TASK_JOBS将" + job_id + "部分同步到已经存在于scheduler_task中，等待监听器处理")
+        except Exception as e:
+            print(f"发生异常: {e}")
+
+    def before_job_execution(self, event: JobExecutionEvent):
+        try:
+            job_id = event.job_id
+            count = self.db.get_data(TaskDetail, job_id=job_id).excute_times
+            self.db.update_data(TaskDetail, {"job_id": job_id}, {"excute_times": count + 1})
+            if count % 6 == 0:
+                print(f"任务{job_id}即将更新状态")
+
+                if "-temp-" in job_id:
+                    job_id = job_id.split("-")[0]
+                print("任务标识符：", job_id)
+
+                shanghai_tz = pytz.timezone("Asia/Shanghai")
+                update_timestamp = event.scheduled_run_time.astimezone(shanghai_tz)
+                end_timestamp = datetime.datetime.now(shanghai_tz)
+                process_time = (end_timestamp - update_timestamp).total_seconds()
+                retval = self.safe_json_dumps(event.retval)
+                exception = self.safe_json_dumps(event.exception)
+                update_data = {
+                    'status': 'running',
+                    'update_timestamp': update_timestamp,
+                    'end_timestamp': end_timestamp,
+                    'process_time': process_time,
+                    'retval': retval,
+                    'exception': exception
+                }
+                task = self.db.get_data(TaskDetail, job_id=job_id)
+                # task_exist = self.has_job_by_jobid(job_id)
+                if task:
+                    if task.status != "pending":
+                        print("任务正常运行，更新状态信息")
+                        self.db.update_data(TaskDetail, {'job_id': job_id}, update_data)
+                    else:
+                        print(f"任务 {job_id} 被标记为pending,不再更新信息")
+
+        except Exception as e:
+            logger.error(f"监听到任务 {event.job_id} 异常: {e}")
+            update_data = {
+                'status': "closing",
+                'exception': str(e)
+            }
+            task_exist = self.has_job_by_jobid(event.job_id)
+            if task_exist:
+                print("更新任务详情")
+                self.db.update_data(TaskDetail, {'job_id': event.job_id}, update_data)
+            else:
+                print(f"任务 {event.job_id} 不在数据库中，不更新错误信息")
+
+    def on_job_removed(self, event: EVENT_JOB_REMOVED):
+        """
+        当原生表中的任务运行结束而被自动删除时，
+        """
+        try:
+            job_id = event.job_id
+            print(f"Removing job: {job_id}")
+            task = self.db.get_data(TaskDetail, job_id=job_id)
+            if task:
+                # self.db.delete_data(TaskDetail, job_id=job_id)
+                self.db.update_data(TaskDetail, {'job_id': job_id}, {"status", "closed"})
+                print(f"Task {job_id} removed from database.")
+            else:
+                print(f"Task {job_id} 已经删除.")
+        except Exception as e:
+            print(f"发生异常: {e}")
+
+    # def on_job_error(self, event: EVENT_JOB_ERROR):
+    #     try:
+    #         job_id = event.job_id
+    #         print(f"alerting job: {job_id}")
+    #         update_data = {
+    #             'status': "error",
+    #         }
+    #         task_exist = self.has_job_by_jobid(event.job_id)
+    #         if task_exist:
+    #             print("更新任务详情")
+    #             self.db.update_data(TaskDetail, {'job_id': event.job_id}, update_data)
+    #         else:
+    #             print(f"任务 {event.job_id} 不在数据库中，不更新错误信息")
+    #     except Exception as e:
+    #         update_data = {
+    #             'status': "error",
+    #             'exception': str(e)
+    #         }
+    #         task_exist = self.has_job_by_jobid(event.job_id)
+    #         if task_exist:
+    #             self.db.update_data(TaskDetail, {'job_id': event.job_id}, update_data)
+    #         else:
+    #             print(f"任务 {event.job_id} 不在数据库中，错误信息无法记录")
+    #         print(f"发生异常: {e}")
 
     def add_date_interval_cron(
             self,
@@ -227,12 +343,37 @@ class Scheduler:
 
     def get_job_job_ids(self) -> List[str]:
         """
-        获取所有任务
+        获取所有任务id
         :return:
         """
         jobs = self.scheduler.get_jobs()
         return [job.id for job in jobs]
 
+    def pause_job_by_jobid(self, job_id: str):
+        """
+        暂停任务
+        :param job_id: 任务编号
+        :return:
+        """
+        return self.scheduler.pause_job(job_id)
+
+    def resume_job_by_jobid(self, job_id: str):
+        """
+        恢复任务
+        :param job_id: 任务编号
+        """
+        self.scheduler.resume_job(job_id)
+
+    # def pause_jobs(self):
+    #     """
+    #     暂停所有任务
+    #     """
+    #     self.scheduler.pause()
+    # def resume_jobs(self):
+    #     """
+    #     恢复所有任务
+    #     """
+    #     self.scheduler.resume()
     @staticmethod
     def __parse_cron_expression(expression: str) -> tuple:
         """
@@ -395,13 +536,13 @@ class Scheduler:
     #         print(f"参数解析结果: {arguments}")  # 打印每步解析后的参数
     #     return arguments
 
-    def __get_mongodb_job_store(self) -> MongoDBJobStore:
-        """
-        获取 MongoDB Job Store
-        :return: MongoDB Job Store
-        """
-        self.db = get_database()
-        return MongoDBJobStore(database=MONGO_DB_NAME, collection=self.COLLECTION, client=self.db.client)
+    @staticmethod
+    def safe_json_dumps(value):
+        try:
+            return json.dumps(value, default=str)  # 使用 default=str 来处理无法直接序列化的对象
+        except TypeError as e:
+            logger.error(f"JSON序列化错误: {e}")
+            return str(value)  # 如果仍然失败，则将值转换为字符串
 
     def shutdown(self) -> None:
         """

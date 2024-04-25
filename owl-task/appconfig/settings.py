@@ -15,22 +15,6 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEBUG = False
 
 
-"""
-引入数据库配置
-"""
-if DEBUG:
-    from .config.production import *
-else:
-    from .config.production import *
-
-
-"""
-发布/订阅通道
-
-与接口相互关联，请勿随意更改
-"""
-SUBSCRIBE = 'kinit_queue'
-
 # Kafka 设置
 KAFKA_BROKER_URL = 'localhost:9092'  # Kafka 服务器地址
 KAFKA_TOPIC = 'client_tasks'  # Kafka 主题
