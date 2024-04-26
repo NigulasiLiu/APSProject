@@ -133,7 +133,7 @@ def add_task():
         end_date = data.get('endTime')
         execution_time = data.get('executionTime')
         task_status = data.get('taskStatus')
-
+        print(f"expression:{expression}")
         logging.debug(f'Received data: {data}')
 
         # 如果需要将数据发送到Kafka，则可以在此处添加相应的逻辑

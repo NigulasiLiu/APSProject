@@ -8,6 +8,7 @@ class TaskDetail(db.Model):
     job_id = db.Column(db.String(128), primary_key=True)
     job_class = db.Column(db.String(128))
     exec_strategy = db.Column(db.String(128))
+    expression = db.Column(db.String(50))
     create_time = db.Column(db.TIMESTAMP)
     start_time = db.Column(db.TIMESTAMP)
     end_time = db.Column(db.TIMESTAMP)

@@ -51,7 +51,7 @@ class Scheduler:
             # 注册事件监听器
             self.scheduler.add_listener(self.before_job_execution, EVENT_JOB_EXECUTED)
             self.scheduler.add_listener(self.on_job_modified,EVENT_JOB_MODIFIED)
-            self.scheduler.add_listener(self.on_job_removed, EVENT_JOB_ADDED)
+            self.scheduler.add_listener(self.on_job_removed, EVENT_JOB_REMOVED)
         self.scheduler.add_jobstore(self.__get_mysql_job_store())
         self.scheduler.start()
 
@@ -94,36 +94,63 @@ class Scheduler:
             job_id = event.job_id
             count = self.db.get_data(TaskDetail, job_id=job_id).excute_times
             self.db.update_data(TaskDetail, {"job_id": job_id}, {"excute_times": count + 1})
-            if count % 6 == 0:
-                print(f"任务{job_id}即将更新状态")
+            # if count % 2 == 0:
+            #     print(f"任务{job_id}即将更新状态")
+            #
+            #     if "-temp-" in job_id:
+            #         job_id = job_id.split("-")[0]
+            #     print("任务标识符：", job_id)
+            #
+            #     shanghai_tz = pytz.timezone("Asia/Shanghai")
+            #     update_timestamp = event.scheduled_run_time.astimezone(shanghai_tz)
+            #     end_timestamp = datetime.datetime.now(shanghai_tz)
+            #     process_time = (end_timestamp - update_timestamp).total_seconds()
+            #     retval = self.safe_json_dumps(event.retval)
+            #     exception = self.safe_json_dumps(event.exception)
+            #     update_data = {
+            #         'status': 'running',
+            #         'update_timestamp': update_timestamp,
+            #         'end_timestamp': end_timestamp,
+            #         'process_time': process_time,
+            #         'retval': retval,
+            #         'exception': exception
+            #     }
+            #     task = self.db.get_data(TaskDetail, job_id=job_id)
+            #     # task_exist = self.has_job_by_jobid(job_id)
+            #     if task:
+            #         if task.status != "pending":
+            #             print("任务正常运行，更新状态信息")
+            #             self.db.update_data(TaskDetail, {'job_id': job_id}, update_data)
+            #         else:
+            #             print(f"任务 {job_id} 被标记为pending,不再更新信息")
+            print(f"任务{job_id}即将更新状态")
 
-                if "-temp-" in job_id:
-                    job_id = job_id.split("-")[0]
-                print("任务标识符：", job_id)
+            if "-temp-" in job_id:
+                job_id = job_id.split("-")[0]
+            print("任务标识符：", job_id)
 
-                shanghai_tz = pytz.timezone("Asia/Shanghai")
-                update_timestamp = event.scheduled_run_time.astimezone(shanghai_tz)
-                end_timestamp = datetime.datetime.now(shanghai_tz)
-                process_time = (end_timestamp - update_timestamp).total_seconds()
-                retval = self.safe_json_dumps(event.retval)
-                exception = self.safe_json_dumps(event.exception)
-                update_data = {
-                    'status': 'running',
-                    'update_timestamp': update_timestamp,
-                    'end_timestamp': end_timestamp,
-                    'process_time': process_time,
-                    'retval': retval,
-                    'exception': exception
-                }
-                task = self.db.get_data(TaskDetail, job_id=job_id)
-                # task_exist = self.has_job_by_jobid(job_id)
-                if task:
-                    if task.status != "pending":
-                        print("任务正常运行，更新状态信息")
-                        self.db.update_data(TaskDetail, {'job_id': job_id}, update_data)
-                    else:
-                        print(f"任务 {job_id} 被标记为pending,不再更新信息")
-
+            shanghai_tz = pytz.timezone("Asia/Shanghai")
+            update_timestamp = event.scheduled_run_time.astimezone(shanghai_tz)
+            end_timestamp = datetime.datetime.now(shanghai_tz)
+            process_time = (end_timestamp - update_timestamp).total_seconds()
+            retval = self.safe_json_dumps(event.retval)
+            exception = self.safe_json_dumps(event.exception)
+            update_data = {
+                'status': 'running',
+                'update_timestamp': update_timestamp,
+                'end_timestamp': end_timestamp,
+                'process_time': process_time,
+                'retval': retval,
+                'exception': exception
+            }
+            task = self.db.get_data(TaskDetail, job_id=job_id)
+            # task_exist = self.has_job_by_jobid(job_id)
+            if task:
+                if task.status != "pending":
+                    print("任务正常运行，更新状态信息")
+                    self.db.update_data(TaskDetail, {'job_id': job_id}, update_data)
+                else:
+                    print(f"任务 {job_id} 被标记为pending,不再更新信息")
         except Exception as e:
             logger.error(f"监听到任务 {event.job_id} 异常: {e}")
             update_data = {
@@ -135,19 +162,19 @@ class Scheduler:
                 print("更新任务详情")
                 self.db.update_data(TaskDetail, {'job_id': event.job_id}, update_data)
             else:
-                print(f"任务 {event.job_id} 不在数据库中，不更新错误信息")
+                print(f"任务 {event.job_id} 不在调度器中，不更新错误信息")
 
     def on_job_removed(self, event: EVENT_JOB_REMOVED):
         """
-        当原生表中的任务运行结束而被自动删除时，
+        当原生表中的任务运行结束而被自动删除时，并不触发该方法，只有手动调用remove_job才会触发
         """
         try:
             job_id = event.job_id
             print(f"Removing job: {job_id}")
             task = self.db.get_data(TaskDetail, job_id=job_id)
             if task:
-                # self.db.delete_data(TaskDetail, job_id=job_id)
-                self.db.update_data(TaskDetail, {'job_id': job_id}, {"status", "closed"})
+                self.db.delete_data(TaskDetail, job_id=job_id)
+                # self.db.update_data(TaskDetail, {'job_id': f"{job_id}_dicarded"}, {"status", "closed"})
                 print(f"Task {job_id} removed from database.")
             else:
                 print(f"Task {job_id} 已经删除.")
@@ -209,7 +236,6 @@ class Scheduler:
             end_date: str = None,
             timezone: str = "Asia/Shanghai",
             job_id: str = None,
-            exec_strategy: str = "cron",
             args: tuple = (),
             **kwargs
     ) -> None | Job:
@@ -225,6 +251,7 @@ class Scheduler:
         :return:
         """
         second, minute, hour, day, month, day_of_week, year = self.__parse_cron_expression(expression)
+
         trigger = CronTrigger(
             second=second,
             minute=minute,
@@ -240,7 +267,7 @@ class Scheduler:
         return self.add_date_interval_cron(job_class, trigger, job_id, *args, **kwargs)
 
     def add_date_job(self, job_class: str, expression: str, job_id: str = None,
-                     exec_strategy: str = "date", args: tuple = (), **kwargs) -> None | Job:
+                     args: tuple = (), **kwargs) -> None | Job:
         """
         date触发器用于在指定的日期和时间触发一次任务。它适用于需要在特定时间点执行一次的任务，例如执行一次备份操作。
         :param job_class: 类路径

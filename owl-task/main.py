@@ -80,16 +80,17 @@ class ScheduledTask:
                     job_id=message.get("job_id"),
                     job_class=message.get("job_class"),
                     exec_strategy=message.get("exec_strategy"),
+                    expression=message.get("expression"),
                     excute_times=message.get("excute_times"),
                     create_time=datetime.datetime.now(shanghai_tz),
                     start_time=message.get("start_date"),
                     end_time=message.get("end_date"),
                     exception="调度中",
                     retval="调度中",
-                    start_timestamp=datetime.datetime.now(shanghai_tz),
-                    update_timestamp=datetime.datetime.now(shanghai_tz),
+                    start_timestamp=None,
+                    update_timestamp=None,
                     process_time=0,
-                    status="starting"
+                    status="starting" if message.get("taskStatus") == "normal" else "pending"
                 )
                 print("尝试添加任务详情条目")
                 # self.mysql.create_data(task_detail)
@@ -113,7 +114,8 @@ class ScheduledTask:
                     self.scheduler.add_interval_job(**job_params)
                     print("添加Interval任务成功")
                 elif exec_strategy == self.JobExecStrategy.date.value:
-                    job_params["expression"] = message.get("expression")
+                    job_params["expression"] = message.get("executionTime")
+                    print("开始添加Date任务")
                     self.scheduler.add_date_job(**job_params)
                     print("添加Date任务成功")
                 elif exec_strategy == self.JobExecStrategy.once.value:

@@ -25,6 +25,7 @@ class TaskDetailSchema(Schema):
     job_id = fields.String()
     job_class = fields.String()
     exec_strategy = fields.String()
+    expression = fields.String()
     create_time = fields.DateTime()
     start_time = fields.DateTime()
     end_time = fields.DateTime()
