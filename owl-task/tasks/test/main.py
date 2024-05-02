@@ -8,6 +8,8 @@
 import datetime
 import time
 
+import pytz
+
 
 class Test:
 
@@ -24,5 +26,6 @@ class Test:
         if self.bo:
             print('Test初始化参数为: {}，{}，{}'.format(self.name, self.age, self.bo))
             print('main参数为: {}'.format(mainpar))
+            print('执行时间为为: {}'.format(datetime.datetime.now(pytz.timezone("Asia/Shanghai"))))
             time.sleep(3)
             return "任务执行完成"

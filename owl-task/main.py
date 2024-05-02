@@ -45,30 +45,7 @@ class ScheduledTask:
         else:
             shanghai_tz = pytz.timezone("Asia/Shanghai")
             try:
-                # print("job_id: {}".format(job_params["job_id"]))
-                # print("收到消息: UUID={}".format(message.get('uuid')))
-                # print("job_class: {}".format(message.get("job_class")))
-                # print("args: {}".format(job_params["args"]))
-                # print("kwargs: {}".format(job_params["kwargs"]))
-                # print("strategy: {}".format(message.get("exec_strategy")))
-                # print("expression: {}".format(message.get("expression")))
-                # print("start_date: {}".format(message.get("start_date")))
-                # print("end_date: {}".format(message.get("end_date")))
-                # print("timezone: {}".format(message.get("timezone")))
-                # result = {
-                #     "job_id": message.get("uuid")+"_"+message.get("job_name"),
-                #     "job_class": message.get("job_class"),
-                #     "exec_strategy": message.get("exec_strategy"),
-                #     "create_time": datetime.datetime.now(shanghai_tz),
-                #     "start_time": message.get("start_date") or "-",
-                #     "end_time": message.get("end_date") or "-",
-                #     "exception": "调度中",
-                #     "retval": "调度中",
-                #     "start_timestamp": datetime.datetime.now(pytz.timezone("Asia/Shanghai")),
-                #     "update_timestamp": datetime.datetime.now(pytz.timezone("Asia/Shanghai")),
-                #     "process_time": 0,
-                #     "status": "starting",
-                # }
+
                 exec_strategy = message.get("exec_strategy")
                 job_params = {
                     "job_id": message.get("job_id"),
@@ -85,12 +62,13 @@ class ScheduledTask:
                     create_time=datetime.datetime.now(shanghai_tz),
                     start_time=message.get("start_date"),
                     end_time=message.get("end_date"),
-                    exception="调度中",
-                    retval="调度中",
+                    taskDescription=message.get("taskDescription"),
+                    exception="-",
+                    retval="等待调度",
                     start_timestamp=None,
                     update_timestamp=None,
                     process_time=0,
-                    status="starting" if message.get("taskStatus") == "normal" else "pending"
+                    status="waiting" if message.get("taskStatus") == "normal" else "pending"
                 )
                 print("尝试添加任务详情条目")
                 # self.mysql.create_data(task_detail)

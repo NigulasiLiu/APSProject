@@ -32,7 +32,7 @@ class MySQLManage:
         Create and return the SQLAlchemy engine instance.
         """
         connection_string = f"mysql+pymysql://{self.user}:{self.password}@{self.host}:{self.port}/{self.db}?charset=utf8"
-        engine = create_engine(connection_string, echo=True, pool_size=10, max_overflow=20, pool_pre_ping=True)
+        engine = create_engine(connection_string, echo=False, pool_size=10, max_overflow=20, pool_pre_ping=True)
         Base.metadata.create_all(engine)  # Ensure all tables are created based on ORM definitions
         return engine
 

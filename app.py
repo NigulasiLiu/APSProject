@@ -55,7 +55,6 @@ def pause_task():
         if 'producer' in locals() and producer is not None:
             producer.close()  # Close the producer after use
 
-
 @app.route('/api/resume_task', methods=['POST'])
 def resume_task():
     job_id = request.args.get('job_id')
@@ -83,7 +82,6 @@ def resume_task():
     finally:
         if 'producer' in locals() and producer is not None:
             producer.close()  # Close the producer after use
-
 
 @app.route('/api/delete_task', methods=['DELETE'])
 def delete_task():
@@ -113,8 +111,6 @@ def delete_task():
         if 'producer' in locals() and producer is not None:
             producer.close()  # Close the producer after use
 
-
-# 定义路由 '/api/test'，接收POST请求
 @app.route('/api/add_task', methods=['POST'])
 def add_task():
     try:
@@ -122,7 +118,7 @@ def add_task():
         data = request.get_json()
         uuid = data.get('uuid')
         job_name = data.get('job_name')
-        task_description = data.get('taskDescription', '')
+        task_description = data.get('taskDescription', 'no')
         job_class = data.get('callTarget')
         args = data.get('args'),
         kwargs = data.get('kwargs'),

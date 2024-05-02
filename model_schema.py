@@ -29,6 +29,7 @@ class TaskDetailSchema(Schema):
     create_time = fields.DateTime()
     start_time = fields.DateTime()
     end_time = fields.DateTime()
+    taskDescription = fields.String()
     exception = fields.String()
     excute_times = fields.Integer()
     update_timestamp = fields.DateTime()
