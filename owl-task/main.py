@@ -124,18 +124,6 @@ class ScheduledTask:
             self.mysql.create_data(model_instance)
 
     def delete_job(self, job_id: str) -> None:
-        # 检查任务是否存在
-        # if not self.scheduler.has_job_by_jobid(job_id):
-        #     print(f"任务 {job_id} 不存在于scheduler，正在检查数据库中的记录...")
-        #     task = self.mysql.get_data(TaskDetail, job_id=job_id)
-        #     if task and task.status == "closing":
-        #         print(f"正在删除 {job_id}，因为其状态为 'closing'...")
-        #         self.mysql.delete_data(TaskDetail, job_id=job_id)
-        #     else:
-        #         if task:
-        #             print(f"任务 {job_id} 的状态不是 'closing'，无法删除。当前状态：{task.status}")
-        #         else:
-        #             print(f"在数据库中未找到任务 {job_id} 的记录。")
         try:
             task = self.mysql.get_data(TaskDetail, job_id=job_id)
             if task:
